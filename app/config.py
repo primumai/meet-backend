@@ -25,6 +25,16 @@ class Settings:
     # VideoSDK configuration
     VIDEOSDK_API_KEY: str = os.getenv("VIDEOSDK_API_KEY", "")
     VIDEOSDK_API_SECRET: str = os.getenv("VIDEOSDK_API_SECRET", "")
+    
+    # Redis configuration
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    
+    # Socket.IO configuration
+    SOCKETIO_PATH: str = os.getenv("SOCKETIO_PATH", "/api/socket")
+    CORS_ORIGIN: str = os.getenv("CORS_ORIGIN", "*")
 
 settings = Settings()
 
