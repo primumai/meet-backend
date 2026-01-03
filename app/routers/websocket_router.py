@@ -16,7 +16,6 @@ sio = socketio.AsyncServer(
     async_mode='asgi'
 )
 
-
 @sio.event
 async def connect(sid, environ, auth):
     """
@@ -35,7 +34,7 @@ async def disconnect(sid):
     # Note: Redis TTL will handle cleanup automatically
 
 
-@sio.event
+@sio.on("join-request") 
 async def join_request(sid, data: Dict):
     """
     Handle join request from participant
@@ -47,6 +46,9 @@ async def join_request(sid, data: Dict):
         "name": str
     }
     """
+    print(f"Join request received: {data}")
+    logger.warning(f"Join request received: {data}")
+
     try:
         meeting_id = data.get("meetingId")
         participant_id = data.get("participantId")
@@ -108,7 +110,7 @@ async def join_request(sid, data: Dict):
         await sio.emit("error", {"message": "Failed to process join request"}, room=sid)
 
 
-@sio.event
+@sio.on("host-join")
 async def host_join(sid, data: Dict):
     """
     Handle host joining (to receive waiting room updates)
@@ -154,7 +156,7 @@ async def host_join(sid, data: Dict):
         await sio.emit("error", {"message": "Failed to join as host"}, room=sid)
 
 
-@sio.event
+@sio.on("admit-participant")
 async def admit_participant(sid, data: Dict):
     """
     Handle admit participant (from host)
@@ -216,7 +218,7 @@ async def admit_participant(sid, data: Dict):
         await sio.emit("error", {"message": "Failed to admit participant"}, room=sid)
 
 
-@sio.event
+@sio.on("deny-participant") 
 async def deny_participant(sid, data: Dict):
     """
     Handle deny participant (from host)
