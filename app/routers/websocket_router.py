@@ -7,7 +7,6 @@ from app.utils.redis_utils import (
 )
 from app.config import settings
 import logging
-
 logger = logging.getLogger(__name__)
 
 # Create Socket.IO server
@@ -15,6 +14,12 @@ sio = socketio.AsyncServer(
     cors_allowed_origins=settings.CORS_ORIGIN if settings.CORS_ORIGIN != "*" else "*",
     async_mode='asgi'
 )
+
+
+
+# =============================
+# CONNECTION EVENTS
+# =============================
 
 @sio.event
 async def connect(sid, environ, auth):
@@ -33,6 +38,10 @@ async def disconnect(sid):
     # Clean up waiting room entries for this socket
     # Note: Redis TTL will handle cleanup automatically
 
+
+# =============================
+# WAITING ROOM EVENTS (UNCHANGED)
+# =============================
 
 @sio.on("join-request") 
 async def join_request(sid, data: Dict):
@@ -275,5 +284,3 @@ async def deny_participant(sid, data: Dict):
     except Exception as error:
         logger.error(f"[WebSocket] Error denying participant: {error}")
         await sio.emit("error", {"message": "Failed to deny participant"}, room=sid)
-
-

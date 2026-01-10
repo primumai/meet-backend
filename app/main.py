@@ -1,11 +1,27 @@
 from fastapi import FastAPI
 import socketio
+import logging
+import sys
 from app.routers.auth_router import router as auth_router
 from app.routers.room_router import router as room_router
 from app.routers.websocket_router import sio
 from app.database import engine, Base
 from app.models import User, Room  # Import models to ensure tables are created
 from app.config import settings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Set specific loggers to INFO level
+logging.getLogger("app").setLevel(logging.INFO)
+logging.getLogger("app.routers").setLevel(logging.INFO)
+logging.getLogger("app.services").setLevel(logging.INFO)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

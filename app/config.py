@@ -35,6 +35,6 @@ class Settings:
     # Socket.IO configuration
     SOCKETIO_PATH: str = os.getenv("SOCKETIO_PATH", "/api/socket")
     CORS_ORIGIN: str = os.getenv("CORS_ORIGIN", "*")
-
+    
 settings = Settings()
 
