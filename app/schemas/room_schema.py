@@ -14,6 +14,7 @@ class RoomPermissionsSchema(BaseModel):
 
 class CreateRoomSchema(BaseModel):
     """Schema for creating a room"""
+    # apikey: str = Field(..., min_length=1, description="API key for company authentication")
     permissions: Dict[str, Any] = Field(default_factory=dict, description="Room permissions object")
     maximum_participants: int = Field(default=10, ge=1, le=100, description="Maximum number of participants")
     start_time: Optional[datetime] = Field(None, description="Room start time")

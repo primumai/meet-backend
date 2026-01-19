@@ -4,9 +4,10 @@ import logging
 import sys
 from app.routers.auth_router import router as auth_router
 from app.routers.room_router import router as room_router
+from app.routers.company_router import router as company_router
 from app.routers.websocket_router import sio
 from app.database import engine, Base
-from app.models import User, Room  # Import models to ensure tables are created
+from app.models import User, Room, Company  # Import models to ensure tables are created
 from app.config import settings
 
 # Configure logging
@@ -41,6 +42,7 @@ def hello_world():
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(room_router, prefix="/rooms", tags=["Rooms"])
+app.include_router(company_router, prefix="/companies", tags=["Companies"])
 
 # Mount Socket.IO app
 socketio_app = socketio.ASGIApp(sio, app, socketio_path=settings.SOCKETIO_PATH)

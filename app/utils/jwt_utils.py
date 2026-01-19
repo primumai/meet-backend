@@ -35,24 +35,21 @@ def create_access_token(user_id: str, role: str, token_type: str = "login") -> s
 
 def decode_access_token(token: str) -> dict:
     """
-    Decode and verify a JWT token
-    
+    Decode and verify a JWT token.
+
     Args:
-        token: The JWT token string
-    
+        token: The JWT token string.
+
     Returns:
-        Decoded token payload
-    
+        Decoded token payload (e.g. user_id, role, exp, token_type).
+
     Raises:
-        JWTError: If token is invalid or expired
+        ExpiredSignatureError: If the token has expired.
+        JWTError: If the token is invalid (bad signature, malformed, etc.).
     """
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
-        return payload
-    except JWTError:
-        raise JWTError("Invalid token")
+    return jwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM]
+    )
 

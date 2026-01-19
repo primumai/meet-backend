@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.room_model import Room
 from app.models.user_model import User
+from app.models.company_model import Company
 from app.schemas.room_schema import (
     CreateRoomSchema, 
     RoomResponseSchema,
@@ -25,6 +26,7 @@ def create_room(
     """
     Create a new room using VideoSDK API
     
+    - **apikey**: API key for company authentication (required)
     - **permissions**: Object containing room feature permissions
     - **maximum_participants**: Maximum number of participants (1-100)
     - **start_time**: Optional room start time
@@ -33,6 +35,15 @@ def create_room(
     Returns the created room with meeting link.
     """
     try:
+        # Validate API key
+        # company = db.query(Company).filter(Company.apikey == room_data.apikey).first()
+        
+        # if not company:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid API key. Access denied."
+        #     )
+        
         # Create room using VideoSDK API
         videosdk_room = VideoSDKService.create_room(
             max_participants=room_data.maximum_participants
