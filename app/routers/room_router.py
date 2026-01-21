@@ -35,7 +35,7 @@ def create_room(
     Returns the created room with meeting link.
     """
     try:
-        # Validate API key
+        # # Validate API key
         # company = db.query(Company).filter(Company.apikey == room_data.apikey).first()
         
         # if not company:

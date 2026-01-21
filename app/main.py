@@ -9,6 +9,7 @@ from app.routers.websocket_router import sio
 from app.database import engine, Base
 from app.models import User, Room, Company  # Import models to ensure tables are created
 from app.config import settings
+from app.middleware.auth_middleware import AuthMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +44,9 @@ def hello_world():
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(room_router, prefix="/rooms", tags=["Rooms"])
 app.include_router(company_router, prefix="/companies", tags=["Companies"])
+
+# Auth middleware: JWT (Authorization) or apiKey header + user_id in body/query
+app.add_middleware(AuthMiddleware)
 
 # Mount Socket.IO app
 socketio_app = socketio.ASGIApp(sio, app, socketio_path=settings.SOCKETIO_PATH)
