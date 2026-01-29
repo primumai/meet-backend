@@ -5,6 +5,7 @@ import sys
 from app.routers.auth_router import router as auth_router
 from app.routers.room_router import router as room_router
 from app.routers.company_router import router as company_router
+from app.routers.subscription_router import router as subscription_router
 from app.routers.websocket_router import sio
 from app.database import engine, Base
 from app.models import User, Room, Company  # Import models to ensure tables are created
@@ -44,6 +45,7 @@ def hello_world():
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(room_router, prefix="/rooms", tags=["Rooms"])
 app.include_router(company_router, prefix="/companies", tags=["Companies"])
+app.include_router(subscription_router, tags=["Subscriptions"])
 
 # Auth middleware: JWT (Authorization) or apiKey header + user_id in body/query
 app.add_middleware(AuthMiddleware)

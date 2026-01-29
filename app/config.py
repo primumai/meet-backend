@@ -31,6 +31,9 @@ class Settings:
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+
+    # Stripe configuration
+    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     
     # Socket.IO configuration
     SOCKETIO_PATH: str = os.getenv("SOCKETIO_PATH", "/api/socket")
