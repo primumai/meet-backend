@@ -32,6 +32,8 @@ def _is_exempt(path: str) -> bool:
         return True
     if any(path.startswith(p) for p in AUTH_EXEMPT_PREFIXES):
         return True
+    if path.endswith("/get-token"):  # Allow get-token without auth (join by link)
+        return True
     return False
 
 

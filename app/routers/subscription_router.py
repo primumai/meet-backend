@@ -285,6 +285,8 @@ def subscribe_package(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Subscription price must be greater than zero",
         )
+    print(subscription.name, "subscription description")
+
 
     try:
         session = stripe.checkout.Session.create(
@@ -294,8 +296,14 @@ def subscribe_package(
                 {
                     "price_data": {
                         "currency": "usd",
-                        "product_data": {"name": subscription.name},
-                        "unit_amount": amount_cents,
+                        "product_data": {
+                            "name": subscription.name,
+                            "description": subscription.description,  
+                            # "images": [
+                            #     "https://cdn.slidemodel.com/wp-content/uploads/0001-career-development-plan-cover-1200px.png"
+                            # ],             
+                        },
+                        "unit_amount": amount_cents,    
                     },
                     "quantity": 1,
                 }
@@ -305,8 +313,8 @@ def subscribe_package(
             metadata={
                 "user_id": user_id,
                 "subs_id": subscription.subs_id,
-                "redirect_url": payload.redirectUrl,
-                "cancel_url": payload.cancelUrl,
+                "redirect_url": payload.redirectUrl or "/",
+                "cancel_url": payload.cancelUrl or "/",
             },
         )
     except stripe.error.StripeError as e:

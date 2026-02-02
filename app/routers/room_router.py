@@ -4,15 +4,17 @@ from app.database import get_db
 from app.models.room_model import Room
 from app.models.user_model import User
 from app.models.company_model import Company
+from datetime import datetime, timezone
 from app.schemas.room_schema import (
-    CreateRoomSchema, 
+    CreateRoomSchema,
     RoomResponseSchema,
     GetTokenSchema,
     TokenResponseSchema,
-    RoomWithUserResponseSchema
+    RoomWithUserResponseSchema,
+    EndMeetingSchema,
 )
 from app.services.videosdk_service import VideoSDKService
-from app.utils.auth_dependencies import get_current_user
+from app.utils.auth_dependencies import get_current_user, require_active_subscription
 
 router = APIRouter()
 
@@ -20,7 +22,7 @@ router = APIRouter()
 @router.post("/create", response_model=RoomResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_room(
     room_data: CreateRoomSchema,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_active_subscription),
     db: Session = Depends(get_db)
 ):
     """
@@ -31,7 +33,7 @@ def create_room(
     - **maximum_participants**: Maximum number of participants (1-100)
     - **start_time**: Optional room start time
     - **end_time**: Optional room end time
-    
+     
     Returns the created room with meeting link.
     """
     try:
@@ -96,6 +98,50 @@ def create_room(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating room: {str(e)}"
         )
+
+
+@router.post("/{room_id}/end", response_model=RoomResponseSchema)
+def end_meeting(
+    room_id: str,
+    body: EndMeetingSchema,
+    db: Session = Depends(get_db),
+):
+    """
+    End a meeting by setting the room's end_time to now.
+
+    - **room_id**: The VideoSDK room ID (path parameter)
+    - **user_id**: ID of the user ending the meeting (must be the room owner)
+
+    Returns the updated room with end_time set.
+    """
+    room = db.query(Room).filter(Room.room_id == room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Room with ID '{room_id}' not found",
+        )
+    if room.user_id != body.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room owner can end the meeting",
+        )
+    now = datetime.now(timezone.utc)
+    room.end_time = now
+    db.commit()
+    db.refresh(room)
+    meeting_link = VideoSDKService.get_meeting_link(room.room_id)
+    return {
+        "id": room.id,
+        "room_id": room.room_id,
+        "user_id": room.user_id,
+        "start_time": room.start_time,
+        "end_time": room.end_time,
+        "permissions": room.permissions,
+        "maximum_participants": room.maximum_participants,
+        "meeting_link": meeting_link,
+        "created_at": room.created_at,
+        "updated_at": room.updated_at,
+    }
 
 
 @router.post("/{room_id}/get-token", response_model=TokenResponseSchema)
