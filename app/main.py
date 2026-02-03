@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
 import socketio
 import logging
 import sys
@@ -49,6 +51,19 @@ app.include_router(subscription_router, tags=["Subscriptions"])
 
 # Auth middleware: JWT (Authorization) or apiKey header + user_id in body/query
 app.add_middleware(AuthMiddleware)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Return consistent error format: { success, message } for all HTTP errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "message": exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+        },
+    )
+
 
 # Mount Socket.IO app
 socketio_app = socketio.ASGIApp(sio, app, socketio_path=settings.SOCKETIO_PATH)

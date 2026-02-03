@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from app.schemas.room_schema import (
     CreateRoomSchema,
     RoomResponseSchema,
+    CreateRoomApiResponse,
     GetTokenSchema,
     TokenResponseSchema,
     RoomWithUserResponseSchema,
@@ -19,7 +20,7 @@ from app.utils.auth_dependencies import get_current_user, require_active_subscri
 router = APIRouter()
 
 
-@router.post("/create", response_model=RoomResponseSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=CreateRoomApiResponse, status_code=status.HTTP_201_CREATED)
 def create_room(
     room_data: CreateRoomSchema,
     current_user: User = Depends(require_active_subscription),
@@ -76,8 +77,8 @@ def create_room(
         db.commit()
         db.refresh(new_room)
         
-        # Return room response with meeting link
-        return {
+        # Return consistent success response with message and data
+        room_data = {
             "id": new_room.id,
             "room_id": new_room.room_id,
             "user_id": new_room.user_id,
@@ -87,7 +88,12 @@ def create_room(
             "maximum_participants": new_room.maximum_participants,
             "meeting_link": meeting_link,
             "created_at": new_room.created_at,
-            "updated_at": new_room.updated_at
+            "updated_at": new_room.updated_at,
+        }
+        return {
+            "success": True,
+            "message": "Room created successfully",
+            "data": room_data,
         }
         
     except HTTPException:

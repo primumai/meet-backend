@@ -55,6 +55,6 @@ def require_active_subscription(
     if not valid_subscription:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Active subscription required. Please subscribe to create meeting rooms.",
+            detail="No active subscription. Please subscribe to create meeting rooms.",
         )
     return current_user

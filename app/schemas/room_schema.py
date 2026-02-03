@@ -68,6 +68,13 @@ class RoomResponseSchema(BaseModel):
         from_attributes = True
 
 
+class CreateRoomApiResponse(BaseModel):
+    """Consistent API response for create room: success, message, and optional data"""
+    success: bool
+    message: str
+    data: Optional[Dict[str, Any]] = None
+
+
 class RoomWithUserResponseSchema(BaseModel):
     """Schema for room response with user details"""
     id: str
