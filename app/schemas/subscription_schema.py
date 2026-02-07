@@ -10,6 +10,7 @@ class SubscriptionSchema(BaseModel):
     subs_id: str
     price: str
     duration_days: int
+    usage_limit: Optional[int] = None  # Usage limit in seconds
     feature_entitlements: Optional[Dict[str, Any] | List[Any]] = None
     created_at: datetime
     updated_at: datetime
@@ -24,6 +25,8 @@ class UserSubscriptionSchema(BaseModel):
     subs_id: str
     status: str
     feature_entitlements: Optional[Dict[str, Any] | List[Any]] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     expired_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -33,10 +36,11 @@ class UserSubscriptionSchema(BaseModel):
 
 
 class SubscriptionBasicSchema(BaseModel):
-    """Basic subscription fields: name, price, duration_days only."""
+    """Basic subscription fields: name, price, duration_days, usage_limit."""
     name: str
     price: str
     duration_days: int
+    usage_limit: Optional[int] = None  # Usage limit in seconds
 
 
 class UserSubscriptionWithDetailsSchema(BaseModel):
@@ -46,6 +50,8 @@ class UserSubscriptionWithDetailsSchema(BaseModel):
     subs_id: str
     status: str
     feature_entitlements: Optional[Dict[str, Any] | List[Any]] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     expired_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

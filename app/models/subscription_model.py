@@ -14,6 +14,7 @@ class Subscription(Base):
     subs_id = Column(String(255), unique=True, nullable=False, index=True)
     price = Column(String(64), nullable=False)
     duration_days = Column(Integer, nullable=False)  # Number of days the subscription runs
+    usage_limit = Column(Integer, nullable=True)  # Usage limit in seconds
     feature_entitlements = Column(JSON, nullable=True)  # JSON blob of features/limits
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

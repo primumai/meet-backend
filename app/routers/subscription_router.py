@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.models.subscription_model import Subscription
 from app.models.user_subscription_model import UserSubscription
+from app.models.user_subscription_usage_model import UserSubscriptionUsage
 from app.models.company_model import Company
 from app.models.user_model import User
 from app.schemas.subscription_schema import (
@@ -201,6 +202,8 @@ def get_user_subscriptions(
                 subs_id=us.subs_id,
                 status=us.status,
                 feature_entitlements=us.feature_entitlements,
+                start_date=us.start_date,
+                end_date=us.end_date,
                 expired_at=us.expired_at,
                 created_at=us.created_at,
                 updated_at=us.updated_at,
@@ -208,6 +211,7 @@ def get_user_subscriptions(
                     name=sub.name if sub else "",
                     price=sub.price if sub else "",
                     duration_days=sub.duration_days if sub else 0,
+                    usage_limit=sub.usage_limit if sub else None,
                 ),
             )
         )
@@ -269,6 +273,36 @@ def subscribe_package(
 
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
+    # Ensure we have (and persist) a Stripe customer for this user
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    try:
+        if not user.stripe_customer_id:
+            # Create Stripe customer only once and store the ID on the user
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.name,
+            )
+            user.stripe_customer_id = customer.id
+            db.commit()
+            db.refresh(user)
+        stripe_customer_id = user.stripe_customer_id
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Stripe error: {e.user_message or str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create Stripe customer: {str(e)}",
+        )
+
     print(subscription.price, "subscription")
 
     try:
@@ -288,22 +322,34 @@ def subscribe_package(
     print(subscription.name, "subscription description")
 
 
+    # Map duration_days to Stripe recurring interval (used for subscription period)
+    duration_days = int(subscription.duration_days or 0)
+    if duration_days <= 0:
+        duration_days = 30  # fallback
+    if duration_days >= 365:
+        recurring = {"interval": "year", "interval_count": duration_days // 365}
+    elif duration_days >= 30:
+        recurring = {"interval": "month", "interval_count": max(1, duration_days // 30)}
+    elif duration_days >= 7:
+        recurring = {"interval": "week", "interval_count": duration_days // 7}
+    else:
+        recurring = {"interval": "day", "interval_count": duration_days}
+
     try:
         session = stripe.checkout.Session.create(
+            customer=stripe_customer_id,
             payment_method_types=["card"],
-            mode="payment",
+            mode="subscription",
             line_items=[
                 {
                     "price_data": {
                         "currency": "usd",
                         "product_data": {
                             "name": subscription.name,
-                            "description": subscription.description,  
-                            # "images": [
-                            #     "https://cdn.slidemodel.com/wp-content/uploads/0001-career-development-plan-cover-1200px.png"
-                            # ],             
+                            "description": subscription.description,
                         },
-                        "unit_amount": amount_cents,    
+                        "unit_amount": amount_cents,
+                        "recurring": recurring,
                     },
                     "quantity": 1,
                 }
@@ -345,12 +391,27 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
     
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    session = stripe.checkout.Session.retrieve(session_id)
-    # You can access metadata right here ✅
+    session = stripe.checkout.Session.retrieve(
+        session_id,
+        expand=["subscription"],
+    )
     metadata = session.metadata
 
     if session.payment_status != "paid":
         raise HTTPException(status_code=400, detail="Payment not completed")
+
+    # Get start_date and end_date from Stripe subscription (not calculated manually)
+    start_date = None
+    end_date = None
+    stripe_sub = session.subscription
+    if stripe_sub:
+        sub_obj = stripe.Subscription.retrieve(stripe_sub) if isinstance(stripe_sub, str) else stripe_sub
+        period_start = getattr(sub_obj, "current_period_start", None)
+        period_end = getattr(sub_obj, "current_period_end", None)
+        if period_start:
+            start_date = datetime.utcfromtimestamp(period_start)
+        if period_end:
+            end_date = datetime.utcfromtimestamp(period_end)
 
     def _meta_get(m, key: str):
         if not m:
@@ -388,13 +449,16 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
             detail="Subscription not found",
         )
 
-    # Use Stripe session creation time as the base "create date" (UTC)
-    base_time = datetime.utcnow()
-    created_ts = getattr(session, "created", None)
-    if isinstance(created_ts, (int, float)):
-        base_time = datetime.utcfromtimestamp(created_ts)
-
-    expired_at = base_time + timedelta(days=int(subscription.duration_days or 0))
+    # Use Stripe subscription period dates (start_date, end_date) - not calculated manually
+    # If Stripe didn't return them (e.g. one-time payment fallback), fall back to calculation
+    if not start_date or not end_date:
+        base_time = datetime.utcnow()
+        created_ts = getattr(session, "created", None)
+        if isinstance(created_ts, (int, float)):
+            base_time = datetime.utcfromtimestamp(created_ts)
+        start_date = base_time
+        end_date = base_time + timedelta(days=int(subscription.duration_days or 0))
+    expired_at = end_date  # end_date from Stripe = subscription expiry
 
     existing = (
         db.query(UserSubscription)
@@ -406,19 +470,34 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
     )
 
     if existing:
+        user_sub = existing
         existing.status = "active"
+        existing.start_date = start_date
+        existing.end_date = end_date
         existing.expired_at = expired_at
         existing.feature_entitlements = subscription.feature_entitlements
     else:
-        db.add(
-            UserSubscription(
-                user_id=user_id,
-                subs_id=subs_id,
-                status="active",
-                expired_at=expired_at,
-                feature_entitlements=subscription.feature_entitlements,
-            )
+        user_sub = UserSubscription(
+            user_id=user_id,
+            subs_id=subs_id,
+            status="active",
+            start_date=start_date,
+            end_date=end_date,
+            expired_at=expired_at,
+            feature_entitlements=subscription.feature_entitlements,
         )
+        db.add(user_sub)
+        db.flush()  # get user_sub.id before adding usage
+
+    # Add usage entry: usage_give from subscription.usage_limit, usage_consumed = 0
+    usage_give = int(subscription.usage_limit or 0)
+    db.add(
+        UserSubscriptionUsage(
+            user_subscription_id=user_sub.id,
+            usage_give=usage_give,
+            usage_consumed=0,
+        )
+    )
 
     db.commit()
 

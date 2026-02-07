@@ -10,7 +10,7 @@ from app.routers.company_router import router as company_router
 from app.routers.subscription_router import router as subscription_router
 from app.routers.websocket_router import sio
 from app.database import engine, Base
-from app.models import User, Room, Company  # Import models to ensure tables are created
+from app.models import User, Room, Company, Subscription, UserSubscription, UserSubscriptionUsage  # Import models to ensure tables are created
 from app.config import settings
 from app.middleware.auth_middleware import AuthMiddleware
 
