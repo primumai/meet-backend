@@ -34,6 +34,8 @@ class Settings:
 
     # Stripe configuration
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+
+    SERVER_API_URL: str = os.getenv("SERVER_API_URL", "")
     
     # Socket.IO configuration
     SOCKETIO_PATH: str = os.getenv("SOCKETIO_PATH", "/api/socket")

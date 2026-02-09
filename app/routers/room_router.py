@@ -1,10 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, or_
 from app.database import get_db
 from app.models.room_model import Room
 from app.models.user_model import User
 from app.models.company_model import Company
-from datetime import datetime, timezone
+from app.models.user_subscription_model import UserSubscription
+from app.models.user_subscription_usage_model import UserSubscriptionUsage
+from datetime import datetime, timezone, timedelta
 from app.schemas.room_schema import (
     CreateRoomSchema,
     RoomResponseSchema,
@@ -113,41 +116,104 @@ def end_meeting(
     db: Session = Depends(get_db),
 ):
     """
-    End a meeting by setting the room's end_time to now.
+    End a meeting by setting the room's end_time to now and update user's subscription usage.
 
     - **room_id**: The VideoSDK room ID (path parameter)
     - **user_id**: ID of the user ending the meeting (must be the room owner)
 
     Returns the updated room with end_time set.
     """
-    room = db.query(Room).filter(Room.room_id == room_id).first()
-    if not room:
+    # Start transaction
+    try:
+        # Get room details
+        room = db.query(Room).filter(Room.room_id == room_id).first()
+        if not room:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Room with ID '{room_id}' not found",
+            )
+        
+        # Verify user is the room owner
+        if room.user_id != body.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the room owner can end the meeting",
+            )
+        
+        # Set end time
+        now = datetime.now(timezone.utc)
+        room.end_time = now
+        
+        # Calculate meeting duration in seconds
+        duration_seconds = 0
+        if room.start_time:
+            # Ensure both datetimes are timezone-aware
+            start_time = room.start_time
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+                
+            duration = now - start_time
+            duration_seconds = max(0, int(duration.total_seconds()))  # Ensure non-negative duration
+            
+            # Update user's subscription usage if there was a duration
+            if duration_seconds > 0:
+                # Find active, non-expired subscription for the user
+                subscription = (
+                    db.query(UserSubscription)
+                    .filter(
+                        UserSubscription.user_id == room.user_id,
+                        UserSubscription.status == "active",
+                        or_(
+                            UserSubscription.expired_at.is_(None),
+                            UserSubscription.expired_at > now
+                        )
+                    )
+                    .order_by(UserSubscription.created_at.desc())
+                    .first()
+                )
+                
+                if subscription:
+                    # Find the usage record for this subscription
+                    usage = (
+                        db.query(UserSubscriptionUsage)
+                        .filter(
+                            UserSubscriptionUsage.user_subscription_id == subscription.id
+                        )
+                        .first()
+                    )
+                    
+                    if usage:
+                        # Update the usage_consumed field
+                        usage.usage_consumed += duration_seconds
+                        db.add(usage)
+        
+        # Commit all changes
+        db.commit()
+        db.refresh(room)
+        
+        # Prepare response
+        meeting_link = VideoSDKService.get_meeting_link(room.room_id)
+        return {
+            "id": room.id,
+            "room_id": room.room_id,
+            "user_id": room.user_id,
+            "start_time": room.start_time,
+            "end_time": room.end_time,
+            "permissions": room.permissions,
+            "maximum_participants": room.maximum_participants,
+            "meeting_link": meeting_link,
+            "created_at": room.created_at,
+            "updated_at": room.updated_at,
+        }
+        
+    except Exception as e:
+        db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Room with ID '{room_id}' not found",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error ending meeting: {str(e)}"
         )
-    if room.user_id != body.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the room owner can end the meeting",
-        )
-    now = datetime.now(timezone.utc)
-    room.end_time = now
-    db.commit()
-    db.refresh(room)
-    meeting_link = VideoSDKService.get_meeting_link(room.room_id)
-    return {
-        "id": room.id,
-        "room_id": room.room_id,
-        "user_id": room.user_id,
-        "start_time": room.start_time,
-        "end_time": room.end_time,
-        "permissions": room.permissions,
-        "maximum_participants": room.maximum_participants,
-        "meeting_link": meeting_link,
-        "created_at": room.created_at,
-        "updated_at": room.updated_at,
-    }
 
 
 @router.post("/{room_id}/get-token", response_model=TokenResponseSchema)

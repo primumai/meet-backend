@@ -354,7 +354,7 @@ def subscribe_package(
                     "quantity": 1,
                 }
             ],
-            success_url="http://localhost:8000/subscriptions/callback" + "?session_id={CHECKOUT_SESSION_ID}",
+            success_url=f"{settings.SERVER_API_URL}/subscriptions/callback?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=payload.cancelUrl,
             metadata={
                 "user_id": user_id,
