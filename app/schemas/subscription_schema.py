@@ -48,6 +48,7 @@ class UserSubscriptionWithDetailsSchema(BaseModel):
     id: str
     user_id: str
     subs_id: str
+    subscription_id: str
     status: str
     feature_entitlements: Optional[Dict[str, Any] | List[Any]] = None
     start_date: Optional[datetime] = None

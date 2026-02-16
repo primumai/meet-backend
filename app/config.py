@@ -36,6 +36,18 @@ class Settings:
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
 
     SERVER_API_URL: str = os.getenv("SERVER_API_URL", "")
+
+    SECRET_KEY_OTP: str = os.getenv("SECRET_KEY_OTP", "")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    
+    # Email configuration for password reset
+    EMAIL_HOST: str = os.getenv("EMAIL_HOST", "smtp.office365.com")
+    EMAIL_PORT: int = int(os.getenv("EMAIL_PORT", "587"))
+    EMAIL_USERNAME: str = os.getenv("EMAIL_USERNAME", "abhisheksha@craftandcode.in")
+    EMAIL_PASSWORD: str = os.getenv("EMAIL_PASSWORD", "abhi@12345")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "abhisheksha@craftandcode.in")
+    RESET_PASSWORD_EXPIRE_MINUTES: int = int(os.getenv("RESET_PASSWORD_EXPIRE_MINUTES", "15"))
+    FRONTEND_RESET_PASSWORD_URL: str = os.getenv("FRONTEND_RESET_PASSWORD_URL", "http://localhost:3000/reset-password")
     
     # Socket.IO configuration
     SOCKETIO_PATH: str = os.getenv("SOCKETIO_PATH", "/api/socket")

@@ -1,13 +1,28 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Header
+from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError, NoResultFound
 from jose.exceptions import ExpiredSignatureError
 from jose import JWTError
+from typing import Optional
+import logging
+
 from app.database import get_db
 from app.models.user_model import User, UserRole
+from app.models.reset_password_model import ResetPassword
 from app.schemas.auth_schema import UserSignupSchema, UserLoginSchema, TokenResponseSchema, UserResponseSchema
+from app.schemas.reset_password_schema import (
+    ResetPasswordRequest, 
+    ResetPasswordConfirm, 
+    ResetPasswordResponse
+)
 from app.utils.jwt_utils import create_access_token, decode_access_token
 from app.utils.password_utils import hash_password, verify_password
+from app.utils.email_utils import send_password_reset_email
+from app.utils.token_utils import generate_reset_token, get_token_expiration, is_token_expired
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -149,8 +164,138 @@ def login(user_data: UserLoginSchema, db: Session = Depends(get_db)):
         )
 
 
+@router.post("/request-password-reset", response_model=ResetPasswordResponse, status_code=status.HTTP_200_OK)
+async def request_password_reset(
+    request: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset link to be sent to the user's email.
+    
+    - **email**: The email address of the user requesting a password reset
+    """
+    try:
+        # Find user by email
+        user = db.query(User).filter(User.email == request.email).first()
+        if not user:
+            # For security reasons, don't reveal that the email doesn't exist
+            logger.info(f"Password reset requested for non-existent email: {request.email}")
+            return {"message": "If your email is registered, you will receive a password reset link."}
+        
+        # Invalidate any existing reset tokens for this user
+        db.query(ResetPassword).filter(
+            ResetPassword.user_id == user.id,
+            ResetPassword.expires_at > datetime.utcnow()
+        ).delete(synchronize_session=False)
+        
+        # Generate a new reset token
+        reset_token = generate_reset_token()
+        expires_at = get_token_expiration()
+        
+        # Create reset password record
+        reset_password = ResetPassword(
+            email=user.email,
+            reset_token=reset_token,
+            expires_at=expires_at,
+            user_id=user.id
+        )
+        
+        db.add(reset_password)
+        db.commit()
+        
+        # Send password reset email in background
+        background_tasks.add_task(
+            send_password_reset_email,
+            recipient_email=user.email,
+            reset_token=reset_token,
+            username=user.name
+        )
+        
+        logger.info(f"Password reset token generated for user {user.id}")
+        return {
+            "message": "If your email is registered, you will receive a password reset link.",
+            "reset_token": reset_token  # For testing, in production this should not be returned
+        }
+        
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Database error during password reset request: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request."
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during password reset request: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again later."
+        )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse, status_code=status.HTTP_200_OK)
+async def reset_password(
+    reset_data: ResetPasswordConfirm,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset user's password using a valid reset token.
+    
+    - **token**: The reset token received via email
+    - **new_password**: The new password to set
+    """
+    try:
+        # Find the reset token
+        reset_record = db.query(ResetPassword).filter(
+            ResetPassword.reset_token == reset_data.token
+        ).first()
+        
+        # Check if token exists and is not expired
+        if not reset_record or is_token_expired(reset_record.expires_at):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token."
+            )
+        
+        # Find the user
+        user = db.query(User).filter(User.email == reset_record.email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
+        
+        # Update the user's password
+        hashed_password = hash_password(reset_data.new_password)
+        user.password = hashed_password
+        
+        # Delete the used reset token
+        db.delete(reset_record)
+        
+        db.commit()
+        
+        logger.info(f"Password reset successful for user {user.id}")
+        return {"message": "Password has been reset successfully."}
+        
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Database error during password reset: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while resetting your password."
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during password reset: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again later."
+        )
+
+
 @router.get("/profile", response_model=UserResponseSchema)
-def get_profile(
+async def get_profile(
     authorization: str | None = Header(None, alias="Authorization"),
     db: Session = Depends(get_db)
 ):

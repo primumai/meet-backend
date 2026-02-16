@@ -200,6 +200,7 @@ def get_user_subscriptions(
                 id=us.id,
                 user_id=us.user_id,
                 subs_id=us.subs_id,
+                subscription_id=us.subscription_id,
                 status=us.status,
                 feature_entitlements=us.feature_entitlements,
                 start_date=us.start_date,
@@ -354,7 +355,7 @@ def subscribe_package(
                     "quantity": 1,
                 }
             ],
-            success_url=f"{settings.SERVER_API_URL}/subscriptions/callback?session_id={{CHECKOUT_SESSION_ID}}",
+            success_url=f"{settings.SERVER_API_URL}subscriptions/callback?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=payload.cancelUrl,
             metadata={
                 "user_id": user_id,
@@ -380,8 +381,8 @@ def subscribe_package(
     }
 
 
-@router.get("/subscriptions/callback")
-def subscription_success(session_id: str, db: Session = Depends(get_db)):
+# @router.get("/subscriptions/callback")
+# def subscription_success(session_id: str, db: Session = Depends(get_db)):
 
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(
@@ -393,25 +394,38 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
 
     session = stripe.checkout.Session.retrieve(
         session_id,
-        expand=["subscription"],
+        expand=["subscription","payment_intent"],
     )
     metadata = session.metadata
 
     if session.payment_status != "paid":
         raise HTTPException(status_code=400, detail="Payment not completed")
 
-    # Get start_date and end_date from Stripe subscription (not calculated manually)
+    # Get subscription and invoice details from Stripe
     start_date = None
     end_date = None
+    subscription_id = None
+    invoice_id = None
+    
+    # Get subscription details
     stripe_sub = session.subscription
     if stripe_sub:
         sub_obj = stripe.Subscription.retrieve(stripe_sub) if isinstance(stripe_sub, str) else stripe_sub
+        subscription_id = sub_obj.id
         period_start = getattr(sub_obj, "current_period_start", None)
         period_end = getattr(sub_obj, "current_period_end", None)
         if period_start:
             start_date = datetime.utcfromtimestamp(period_start)
         if period_end:
             end_date = datetime.utcfromtimestamp(period_end)
+    
+    # Get invoice ID from the payment intent or invoice
+    if session.payment_intent:
+        payment_intent = stripe.PaymentIntent.retrieve(session.payment_intent)
+        if payment_intent and hasattr(payment_intent, 'latest_charge'):
+            charge = stripe.Charge.retrieve(payment_intent.latest_charge)
+            if charge and hasattr(charge, 'invoice'):
+                invoice_id = charge.invoice
 
     def _meta_get(m, key: str):
         if not m:
@@ -476,10 +490,16 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
         existing.end_date = end_date
         existing.expired_at = expired_at
         existing.feature_entitlements = subscription.feature_entitlements
+        if subscription_id:
+            existing.subscription_id = subscription_id
+        if invoice_id:
+            existing.invoice_id = invoice_id
     else:
         user_sub = UserSubscription(
             user_id=user_id,
             subs_id=subs_id,
+            subscription_id=subscription_id,
+            invoice_id=invoice_id,
             status="active",
             start_date=start_date,
             end_date=end_date,
@@ -506,3 +526,224 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
         redirect_url = "/"
 
     return RedirectResponse(url=redirect_url)
+
+
+@router.get("/subscriptions/callback")
+def subscription_success(session_id: str, db: Session = Depends(get_db)):
+
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stripe is not configured",
+        )
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    # Retrieve checkout session with expanded objects
+    session = stripe.checkout.Session.retrieve(
+        session_id,
+        expand=["subscription", "payment_intent"],
+    )
+
+    if session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Payment not completed")
+
+    metadata = session.metadata
+
+    # -----------------------------
+    # Extract Stripe IDs
+    # -----------------------------
+    subscription_id = None
+    invoice_id = None
+    transaction_id = None
+
+    # Subscription ID
+    if session.subscription:
+        subscription_id = (
+            session.subscription.id
+            if not isinstance(session.subscription, str)
+            else session.subscription
+        )
+
+    # Invoice ID (direct from session)
+    invoice_id = session.invoice
+
+    # Transaction ID (PaymentIntent ID)
+    if session.payment_intent:
+        transaction_id = (
+            session.payment_intent.id
+            if not isinstance(session.payment_intent, str)
+            else session.payment_intent
+        )
+
+    # Print transaction_id (as you requested)
+    print("Transaction ID (PaymentIntent):", transaction_id)
+
+    # -----------------------------
+    # Extract Metadata
+    # -----------------------------
+    def _meta_get(m, key: str):
+        if not m:
+            return None
+        getter = getattr(m, "get", None)
+        if callable(getter):
+            try:
+                return getter(key)
+            except Exception:
+                pass
+        return getattr(m, key, None)
+
+    user_id = _meta_get(metadata, "user_id")
+    subs_id = _meta_get(metadata, "subs_id")
+    redirect_url = _meta_get(metadata, "redirect_url")
+
+    if not user_id or not subs_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing user_id or subs_id in Stripe session metadata",
+        )
+
+    user_id = str(user_id).strip()
+    subs_id = str(subs_id).strip()
+
+    # -----------------------------
+    # Fetch Subscription Plan
+    # -----------------------------
+    subscription = (
+        db.query(Subscription)
+        .filter(Subscription.subs_id == subs_id)
+        .first()
+    )
+
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subscription not found",
+        )
+
+    # -----------------------------
+    # Get Stripe Period Dates
+    # -----------------------------
+    start_date = None
+    end_date = None
+
+    if session.subscription:
+        sub_obj = session.subscription
+        period_start = getattr(sub_obj, "current_period_start", None)
+        period_end = getattr(sub_obj, "current_period_end", None)
+
+        if period_start:
+            start_date = datetime.utcfromtimestamp(period_start)
+
+        if period_end:
+            end_date = datetime.utcfromtimestamp(period_end)
+
+    # Fallback (very rare case)
+    if not start_date or not end_date:
+        base_time = datetime.utcnow()
+        start_date = base_time
+        end_date = base_time + timedelta(days=int(subscription.duration_days or 0))
+
+    expired_at = end_date
+
+    # -----------------------------
+    # Check Existing User Subscription
+    # -----------------------------
+    existing = (
+        db.query(UserSubscription)
+        .filter(
+            UserSubscription.user_id == user_id,
+            UserSubscription.subs_id == subs_id,
+        )
+        .first()
+    )
+
+    if existing:
+        existing.status = "active"
+        existing.start_date = start_date
+        existing.end_date = end_date
+        existing.expired_at = expired_at
+        existing.feature_entitlements = subscription.feature_entitlements
+
+        # Save Stripe IDs
+        if subscription_id:
+            existing.subscription_id = subscription_id
+
+        if invoice_id:
+            existing.invoice_id = invoice_id
+
+    else:
+        user_sub = UserSubscription(
+            user_id=user_id,
+            subs_id=subs_id,
+            subscription_id=subscription_id,
+            invoice_id=invoice_id,
+            status="active",
+            start_date=start_date,
+            end_date=end_date,
+            expired_at=expired_at,
+            feature_entitlements=subscription.feature_entitlements,
+        )
+        db.add(user_sub)
+        db.flush()
+
+        # Create usage entry only for new subscription
+        db.add(
+            UserSubscriptionUsage(
+                user_subscription_id=user_sub.id,
+                usage_give=int(subscription.usage_limit or 0),
+                usage_consumed=0,
+            )
+        )
+
+    db.commit()
+
+    if not redirect_url:
+        redirect_url = "/"
+
+    return RedirectResponse(url=redirect_url)
+
+
+
+@router.get("/subscriptions/manage/pack")
+async def manage_subscription_pack(
+    subscription_id: str,
+    return_url: str = "https://meet-nine-nu.vercel.app/dashboard",
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a Stripe Customer Portal session URL for managing a subscription.
+    
+    Args:
+        subscription_id: The Stripe subscription ID to manage
+        return_url: The URL to redirect to after managing the subscription
+        
+    Returns:
+        dict: Contains the URL to the Stripe Customer Portal
+    """
+    try:
+        if not settings.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Stripe secret key is not configured on the server.",
+            )
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        # Retrieve the subscription to get the customer ID
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        customer_id = subscription.customer
+        
+        # Create a Stripe Billing Portal session
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+        
+        return {"url": session.url}
+        
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error creating Stripe portal session: {str(e)}"
+        )

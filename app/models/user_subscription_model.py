@@ -11,6 +11,8 @@ class UserSubscription(Base):
     id = Column(CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(CHAR(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     subs_id = Column(String(255), ForeignKey("subscriptions.subs_id", ondelete="CASCADE"), nullable=False, index=True)
+    subscription_id = Column(String(255), nullable=True, index=True)  # Stripe subscription ID
+    invoice_id = Column(String(255), nullable=True, index=True)  # Stripe invoice ID
     status = Column(String(64), nullable=False, default="active")
     feature_entitlements = Column(JSON, nullable=True)  # JSON blob of features/limits for this user
     start_date = Column(DateTime(timezone=True), nullable=True)
