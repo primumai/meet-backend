@@ -10,6 +10,7 @@ from app.models.user_subscription_model import UserSubscription
 from app.models.user_subscription_usage_model import UserSubscriptionUsage
 from app.models.company_model import Company
 from app.models.user_model import User
+from app.models.transaction_model import Transaction
 from app.schemas.subscription_schema import (
     SubscriptionSchema,
     SubscriptionBasicSchema,
@@ -384,148 +385,148 @@ def subscribe_package(
 # @router.get("/subscriptions/callback")
 # def subscription_success(session_id: str, db: Session = Depends(get_db)):
 
-    if not settings.STRIPE_SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Stripe is not configured",
-        )
+    # if not settings.STRIPE_SECRET_KEY:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Stripe is not configured",
+    #     )
     
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    # stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    session = stripe.checkout.Session.retrieve(
-        session_id,
-        expand=["subscription","payment_intent"],
-    )
-    metadata = session.metadata
+    # session = stripe.checkout.Session.retrieve(
+    #     session_id,
+    #     expand=["subscription","payment_intent"],
+    # )
+    # metadata = session.metadata
 
-    if session.payment_status != "paid":
-        raise HTTPException(status_code=400, detail="Payment not completed")
+    # if session.payment_status != "paid":
+    #     raise HTTPException(status_code=400, detail="Payment not completed")
 
-    # Get subscription and invoice details from Stripe
-    start_date = None
-    end_date = None
-    subscription_id = None
-    invoice_id = None
+    # # Get subscription and invoice details from Stripe
+    # start_date = None
+    # end_date = None
+    # subscription_id = None
+    # invoice_id = None
     
-    # Get subscription details
-    stripe_sub = session.subscription
-    if stripe_sub:
-        sub_obj = stripe.Subscription.retrieve(stripe_sub) if isinstance(stripe_sub, str) else stripe_sub
-        subscription_id = sub_obj.id
-        period_start = getattr(sub_obj, "current_period_start", None)
-        period_end = getattr(sub_obj, "current_period_end", None)
-        if period_start:
-            start_date = datetime.utcfromtimestamp(period_start)
-        if period_end:
-            end_date = datetime.utcfromtimestamp(period_end)
+    # # Get subscription details
+    # stripe_sub = session.subscription
+    # if stripe_sub:
+    #     sub_obj = stripe.Subscription.retrieve(stripe_sub) if isinstance(stripe_sub, str) else stripe_sub
+    #     subscription_id = sub_obj.id
+    #     period_start = getattr(sub_obj, "current_period_start", None)
+    #     period_end = getattr(sub_obj, "current_period_end", None)
+    #     if period_start:
+    #         start_date = datetime.utcfromtimestamp(period_start)
+    #     if period_end:
+    #         end_date = datetime.utcfromtimestamp(period_end)
     
-    # Get invoice ID from the payment intent or invoice
-    if session.payment_intent:
-        payment_intent = stripe.PaymentIntent.retrieve(session.payment_intent)
-        if payment_intent and hasattr(payment_intent, 'latest_charge'):
-            charge = stripe.Charge.retrieve(payment_intent.latest_charge)
-            if charge and hasattr(charge, 'invoice'):
-                invoice_id = charge.invoice
+    # # Get invoice ID from the payment intent or invoice
+    # if session.payment_intent:
+    #     payment_intent = stripe.PaymentIntent.retrieve(session.payment_intent)
+    #     if payment_intent and hasattr(payment_intent, 'latest_charge'):
+    #         charge = stripe.Charge.retrieve(payment_intent.latest_charge)
+    #         if charge and hasattr(charge, 'invoice'):
+    #             invoice_id = charge.invoice
 
-    def _meta_get(m, key: str):
-        if not m:
-            return None
-        # Stripe returns a dict-like object; support both styles
-        getter = getattr(m, "get", None)
-        if callable(getter):
-            try:
-                return getter(key)
-            except Exception:
-                pass
-        return getattr(m, key, None)
+    # def _meta_get(m, key: str):
+    #     if not m:
+    #         return None
+    #     # Stripe returns a dict-like object; support both styles
+    #     getter = getattr(m, "get", None)
+    #     if callable(getter):
+    #         try:
+    #             return getter(key)
+    #         except Exception:
+    #             pass
+    #     return getattr(m, key, None)
 
-    user_id = _meta_get(metadata, "user_id")
-    subs_id = _meta_get(metadata, "subs_id")
-    redirect_url = _meta_get(metadata, "redirect_url")
+    # user_id = _meta_get(metadata, "user_id")
+    # subs_id = _meta_get(metadata, "subs_id")
+    # redirect_url = _meta_get(metadata, "redirect_url")
 
-    if not user_id or not subs_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing user_id or subs_id in Stripe session metadata",
-        )
+    # if not user_id or not subs_id:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Missing user_id or subs_id in Stripe session metadata",
+    #     )
 
-    user_id = str(user_id).strip()
-    subs_id = str(subs_id).strip()
+    # user_id = str(user_id).strip()
+    # subs_id = str(subs_id).strip()
 
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.subs_id == subs_id)
-        .first()
-    )
-    if not subscription:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Subscription not found",
-        )
+    # subscription = (
+    #     db.query(Subscription)
+    #     .filter(Subscription.subs_id == subs_id)
+    #     .first()
+    # )
+    # if not subscription:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail="Subscription not found",
+    #     )
 
-    # Use Stripe subscription period dates (start_date, end_date) - not calculated manually
-    # If Stripe didn't return them (e.g. one-time payment fallback), fall back to calculation
-    if not start_date or not end_date:
-        base_time = datetime.utcnow()
-        created_ts = getattr(session, "created", None)
-        if isinstance(created_ts, (int, float)):
-            base_time = datetime.utcfromtimestamp(created_ts)
-        start_date = base_time
-        end_date = base_time + timedelta(days=int(subscription.duration_days or 0))
-    expired_at = end_date  # end_date from Stripe = subscription expiry
+    # # Use Stripe subscription period dates (start_date, end_date) - not calculated manually
+    # # If Stripe didn't return them (e.g. one-time payment fallback), fall back to calculation
+    # if not start_date or not end_date:
+    #     base_time = datetime.utcnow()
+    #     created_ts = getattr(session, "created", None)
+    #     if isinstance(created_ts, (int, float)):
+    #         base_time = datetime.utcfromtimestamp(created_ts)
+    #     start_date = base_time
+    #     end_date = base_time + timedelta(days=int(subscription.duration_days or 0))
+    # expired_at = end_date  # end_date from Stripe = subscription expiry
 
-    existing = (
-        db.query(UserSubscription)
-        .filter(
-            UserSubscription.user_id == user_id,
-            UserSubscription.subs_id == subs_id,
-        )
-        .first()
-    )
+    # existing = (
+    #     db.query(UserSubscription)
+    #     .filter(
+    #         UserSubscription.user_id == user_id,
+    #         UserSubscription.subs_id == subs_id,
+    #     )
+    #     .first()
+    # )
 
-    if existing:
-        user_sub = existing
-        existing.status = "active"
-        existing.start_date = start_date
-        existing.end_date = end_date
-        existing.expired_at = expired_at
-        existing.feature_entitlements = subscription.feature_entitlements
-        if subscription_id:
-            existing.subscription_id = subscription_id
-        if invoice_id:
-            existing.invoice_id = invoice_id
-    else:
-        user_sub = UserSubscription(
-            user_id=user_id,
-            subs_id=subs_id,
-            subscription_id=subscription_id,
-            invoice_id=invoice_id,
-            status="active",
-            start_date=start_date,
-            end_date=end_date,
-            expired_at=expired_at,
-            feature_entitlements=subscription.feature_entitlements,
-        )
-        db.add(user_sub)
-        db.flush()  # get user_sub.id before adding usage
+    # if existing:
+    #     user_sub = existing
+    #     existing.status = "active"
+    #     existing.start_date = start_date
+    #     existing.end_date = end_date
+    #     existing.expired_at = expired_at
+    #     existing.feature_entitlements = subscription.feature_entitlements
+    #     if subscription_id:
+    #         existing.subscription_id = subscription_id
+    #     if invoice_id:
+    #         existing.invoice_id = invoice_id
+    # else:
+    #     user_sub = UserSubscription(
+    #         user_id=user_id,
+    #         subs_id=subs_id,
+    #         subscription_id=subscription_id,
+    #         invoice_id=invoice_id,
+    #         status="active",
+    #         start_date=start_date,
+    #         end_date=end_date,
+    #         expired_at=expired_at,
+    #         feature_entitlements=subscription.feature_entitlements,
+    #     )
+    #     db.add(user_sub)
+    #     db.flush()  # get user_sub.id before adding usage
 
-    # Add usage entry: usage_give from subscription.usage_limit, usage_consumed = 0
-    usage_give = int(subscription.usage_limit or 0)
-    db.add(
-        UserSubscriptionUsage(
-            user_subscription_id=user_sub.id,
-            usage_give=usage_give,
-            usage_consumed=0,
-        )
-    )
+    # # Add usage entry: usage_give from subscription.usage_limit, usage_consumed = 0
+    # usage_give = int(subscription.usage_limit or 0)
+    # db.add(
+    #     UserSubscriptionUsage(
+    #         user_subscription_id=user_sub.id,
+    #         usage_give=usage_give,
+    #         usage_consumed=0,
+    #     )
+    # )
 
-    db.commit()
+    # db.commit()
 
-    if not redirect_url:
-        # Fallback: don't crash if metadata.redirect_url wasn't set
-        redirect_url = "/"
+    # if not redirect_url:
+    #     # Fallback: don't crash if metadata.redirect_url wasn't set
+    #     redirect_url = "/"
 
-    return RedirectResponse(url=redirect_url)
+    # return RedirectResponse(url=redirect_url)
 
 
 @router.get("/subscriptions/callback")
@@ -544,6 +545,9 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
         session_id,
         expand=["subscription", "payment_intent"],
     )
+    print(session, "session")
+    print(session.metadata,"session.metadata")
+    print(session.payment_intent,"session.payment_intent")
 
     if session.payment_status != "paid":
         raise HTTPException(status_code=400, detail="Payment not completed")
@@ -697,6 +701,53 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
         )
 
     db.commit()
+
+    # -----------------------------
+    # Create transaction record
+    # -----------------------------
+    try:
+        amount = None
+        currency = None
+        
+        # Try to get amount and currency from payment intent
+        # if session.subscription and hasattr(session.subscription, 'plan'):
+        #     # Get amount from plan
+        #     plan = session.subscription.plan
+        #     if hasattr(plan, 'amount'):
+        #         amount = str(float(plan.amount) / 100)  # Convert from cents to dollars
+        #     if hasattr(plan, 'currency'):
+        #         currency = plan.currency.upper()
+
+        if session.payment_status == "paid":
+            amount = session.amount_total / 100
+            currency = session.currency.upper()
+
+
+        # Get transaction_id from payment_intent if available
+        payment_intent_id = None
+        if hasattr(session, 'payment_intent') and session.payment_intent:
+            payment_intent_id = session.payment_intent.id if not isinstance(session.payment_intent, str) else session.payment_intent
+        
+        # Get invoice_id from session
+        invoice_id = getattr(session, 'invoice', None)
+        
+        # Create transaction record
+        transaction = Transaction(
+            user_id=user_id,
+            subscription_id=subscription.id,
+            invoice_id=invoice_id,
+            # transaction_id=payment_intent_id or f"txn_{user_id[-8:]}_{int(datetime.utcnow().timestamp())}",
+            amount=amount,
+            currency=currency,
+            status="completed" if getattr(session, 'payment_status') == "paid" else "pending"
+        )
+        db.add(transaction)
+        db.commit()
+        
+    except Exception as e:
+        # Log the error but don't fail the whole process
+        print(f"Error saving transaction: {str(e)}")
+        db.rollback()
 
     if not redirect_url:
         redirect_url = "/"
