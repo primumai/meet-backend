@@ -798,3 +798,44 @@ async def manage_subscription_pack(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error creating Stripe portal session: {str(e)}"
         )
+
+
+@router.get("/get-invoice/{invoice_id}")
+def get_invoice(
+    invoice_id: str,
+    # current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve invoice details by invoice ID
+ 
+    - **invoice_id**: The Stripe invoice ID to retrieve
+ 
+    Returns invoice details including status, amount, and URLs
+    """
+    try:
+        if not settings.STRIPE_SECRET_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Stripe secret key is not configured on the server.",
+            )
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        invoice = stripe.Invoice.retrieve(invoice_id)
+ 
+        return {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "amount_paid": invoice.amount_paid,
+            "currency": invoice.currency,
+            "invoice_url": invoice.hosted_invoice_url,
+            "pdf_url": invoice.invoice_pdf,
+        }
+ 
+    except stripe.error.StripeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error retrieving invoice: {str(e)}"
+        )
+ 
