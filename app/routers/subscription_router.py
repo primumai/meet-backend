@@ -755,7 +755,6 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
     return RedirectResponse(url=redirect_url)
 
 
-
 @router.get("/subscriptions/manage/pack")
 async def manage_subscription_pack(
     subscription_id: str,
@@ -838,4 +837,4 @@ def get_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error retrieving invoice: {str(e)}"
         )
- 
+  

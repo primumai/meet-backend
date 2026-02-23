@@ -8,6 +8,7 @@ from app.models.company_model import Company
 from app.models.user_subscription_model import UserSubscription
 from app.models.user_subscription_usage_model import UserSubscriptionUsage
 from datetime import datetime, timezone, timedelta
+import logging
 from app.schemas.room_schema import (
     CreateRoomSchema,
     RoomResponseSchema,
@@ -18,9 +19,12 @@ from app.schemas.room_schema import (
     EndMeetingSchema,
 )
 from app.services.videosdk_service import VideoSDKService
+from app.utils.email_utils import send_create_room_email
 from app.utils.auth_dependencies import get_current_user, require_active_subscription
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/create", response_model=CreateRoomApiResponse, status_code=status.HTTP_201_CREATED)
@@ -79,6 +83,16 @@ def create_room(
         db.add(new_room)
         db.commit()
         db.refresh(new_room)
+        
+        # Send email if send_email_to is provided
+        if room_data.send_email_to:
+            email_sent = send_create_room_email(
+                recipient_email=room_data.send_email_to,
+                room_name=room_id,
+                meeting_link=meeting_link
+            )
+            if not email_sent:
+                logger.warning(f"Failed to send room creation email to {room_data.send_email_to}")
         
         # Return consistent success response with message and data
         room_data = {

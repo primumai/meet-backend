@@ -19,6 +19,9 @@ class CreateRoomSchema(BaseModel):
     maximum_participants: int = Field(default=10, ge=1, le=100, description="Maximum number of participants")
     start_time: Optional[datetime] = Field(None, description="Room start time")
     end_time: Optional[datetime] = Field(None, description="Room end time")
+    send_email_to: Optional[str] = Field(None, description="Email addresses to send email")
+    send_phone_to: Optional[str] = Field(None, description="Phone number to send message")
+
 
 
 class EndMeetingSchema(BaseModel):
