@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Paths that do not require authentication
 AUTH_EXEMPT_PREFIXES = ("/auth",)
-AUTH_EXEMPT_EXACT = {"/", "/docs", "/openapi.json", "/redoc", "/companies/create", "/subscriptions","/subscriptions/callback"}
+AUTH_EXEMPT_EXACT = {"/health-check", "/docs", "/openapi.json", "/redoc", "/companies/create", "/subscriptions","/subscriptions/callback", "/webhook"}
 
 # Header names for API key (case-insensitive via .get which normalizes)
 APIKEY_HEADERS = ("x-api-key", "apikey")

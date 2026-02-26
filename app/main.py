@@ -35,14 +35,14 @@ Base.metadata.create_all(bind=engine)
 # Create FastAPI app
 app = FastAPI(
     title="Meeting App API",
-    description="FastAPI application for managing meetings",
+    description="Yellowcom can position the Video Meet subscription button within the same section where they currently display their pricing plans and other service subscriptions, ensuring consistent visibility and a seamless user experience.",
     version="1.0.0"
 )
 
-# Hello World endpoint
-@app.get("/")
-def hello_world():
-    return {"message": "Hello World"}
+# Health check endpoint
+@app.get("/health-check")
+def health_check():
+    return {"status": "ok"}
 
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])

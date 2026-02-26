@@ -34,6 +34,7 @@ class Settings:
 
     # Stripe configuration
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
     SERVER_API_URL: str = os.getenv("SERVER_API_URL", "")
 

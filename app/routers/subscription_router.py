@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Header
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timedelta
@@ -24,9 +24,12 @@ from app.schemas.subscription_schema import (
 )
 from app.utils.jwt_utils import decode_access_token
 from app.config import settings
-import stripe   
+import stripe
+import logging   
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _require_user_id_from_bearer(request: Request, db: Session) -> str:
@@ -836,5 +839,266 @@ def get_invoice(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error retrieving invoice: {str(e)}"
+        )
+
+
+# Webhook handler functions
+async def handle_subscription_updated(event_data: dict, db: Session):
+    """Handle subscription updated events from Stripe"""
+    try:
+        stripe_subscription_id = event_data.get("id")
+        if not stripe_subscription_id:
+            logger.error("No subscription ID in event data")
+            return
+        
+        # Find user subscription by Stripe subscription ID
+        user_subscription = (
+            db.query(UserSubscription)
+            .filter(UserSubscription.subscription_id == stripe_subscription_id)
+            .first()
+        )
+        
+        if not user_subscription:
+            logger.warning(f"No user subscription found for Stripe subscription ID: {stripe_subscription_id}")
+            return
+        
+        # Update subscription status based on Stripe status
+        stripe_status = event_data.get("status", "unknown")
+        user_subscription.status = stripe_status
+        
+        # Update period dates if available
+        current_period_start = event_data.get("current_period_start")
+        current_period_end = event_data.get("current_period_end")
+        
+        if current_period_start:
+            user_subscription.start_date = datetime.utcfromtimestamp(current_period_start)
+        if current_period_end:
+            user_subscription.end_date = datetime.utcfromtimestamp(current_period_end)
+            user_subscription.expired_at = datetime.utcfromtimestamp(current_period_end)
+        
+        db.commit()
+        logger.info(f"Updated subscription {stripe_subscription_id} to status {stripe_status}")
+        
+    except Exception as e:
+        logger.error(f"Error handling subscription updated: {str(e)}")
+        raise
+
+
+async def handle_subscription_deleted(event_data: dict, db: Session):
+    """Handle subscription deleted/cancelled events from Stripe"""
+    try:
+        stripe_subscription_id = event_data.get("id")
+        if not stripe_subscription_id:
+            logger.error("No subscription ID in event data")
+            return
+        
+        # Find user subscription by Stripe subscription ID
+        user_subscription = (
+            db.query(UserSubscription)
+            .filter(UserSubscription.subscription_id == stripe_subscription_id)
+            .first()
+        )
+        
+        if not user_subscription:
+            logger.warning(f"No user subscription found for Stripe subscription ID: {stripe_subscription_id}")
+            return
+        
+        # Mark subscription as cancelled
+        user_subscription.status = "cancelled"
+        user_subscription.expired_at = datetime.utcnow()
+        
+        db.commit()
+        logger.info(f"Cancelled subscription {stripe_subscription_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling subscription deleted: {str(e)}")
+        raise
+
+
+async def handle_invoice_payment_succeeded(event_data: dict, db: Session):
+    """Handle successful invoice payment events"""
+    try:
+        subscription_id = event_data.get("subscription")
+        if not subscription_id:
+            logger.warning("No subscription ID in invoice payment succeeded event")
+            return
+        
+        # Find user subscription
+        user_subscription = (
+            db.query(UserSubscription)
+            .filter(UserSubscription.subscription_id == subscription_id)
+            .first()
+        )
+        
+        if not user_subscription:
+            logger.warning(f"No user subscription found for Stripe subscription ID: {subscription_id}")
+            return
+        
+        # Ensure subscription is active
+        user_subscription.status = "active"
+        
+        # Update period dates if available
+        period_start = event_data.get("period_start")
+        period_end = event_data.get("period_end")
+        
+        if period_start:
+            user_subscription.start_date = datetime.utcfromtimestamp(period_start)
+        if period_end:
+            user_subscription.end_date = datetime.utcfromtimestamp(period_end)
+            user_subscription.expired_at = datetime.utcfromtimestamp(period_end)
+        
+        db.commit()
+        logger.info(f"Renewed subscription {subscription_id} after successful payment")
+        
+    except Exception as e:
+        logger.error(f"Error handling invoice payment succeeded: {str(e)}")
+        raise
+
+
+async def handle_invoice_payment_failed(event_data: dict, db: Session):
+    """Handle failed invoice payment events"""
+    try:
+        subscription_id = event_data.get("subscription")
+        if not subscription_id:
+            logger.warning("No subscription ID in invoice payment failed event")
+            return
+        
+        # Find user subscription
+        user_subscription = (
+            db.query(UserSubscription)
+            .filter(UserSubscription.subscription_id == subscription_id)
+            .first()
+        )
+        
+        if not user_subscription:
+            logger.warning(f"No user subscription found for Stripe subscription ID: {subscription_id}")
+            return
+        
+        # Mark subscription as past due
+        user_subscription.status = "past_due"
+        
+        db.commit()
+        logger.info(f"Marked subscription {subscription_id} as past due due to payment failure")
+        
+    except Exception as e:
+        logger.error(f"Error handling invoice payment failed: {str(e)}")
+        raise
+
+
+async def handle_invoice_payment_action_required(event_data: dict, db: Session):
+    """Handle invoice payment action required events"""
+    try:
+        subscription_id = event_data.get("subscription")
+        if not subscription_id:
+            logger.warning("No subscription ID in invoice payment action required event")
+            return
+        
+        # Find user subscription
+        user_subscription = (
+            db.query(UserSubscription)
+            .filter(UserSubscription.subscription_id == subscription_id)
+            .first()
+        )
+        
+        if not user_subscription:
+            logger.warning(f"No user subscription found for Stripe subscription ID: {subscription_id}")
+            return
+        
+        # Mark subscription as unpaid (requires action)
+        user_subscription.status = "unpaid"
+        
+        db.commit()
+        logger.info(f"Marked subscription {subscription_id} as unpaid - action required")
+        
+    except Exception as e:
+        logger.error(f"Error handling invoice payment action required: {str(e)}")
+        raise
+
+
+@router.post("/webhook")
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    stripe_signature: str = Header(None, alias="stripe-signature")
+):
+    """
+    Handle Stripe webhook events for subscription and payment updates.
+    This endpoint processes events like subscription creation, updates, cancellations,
+    and payment success/failure.
+    """
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook secret not configured"
+        )
+
+    if not stripe_signature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing stripe-signature header"
+        )
+
+    # Get the raw request body
+    body = await request.body()
+
+    try:
+        # Verify webhook signature
+        event = stripe.Webhook.construct_event(
+            body, stripe_signature, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        logger.error(f"Invalid payload: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payload"
+        )
+    except stripe.error.SignatureVerificationError as e:
+        logger.error(f"Invalid signature: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signature"
+        )
+
+    # Handle the event
+    event_type = event.get("type")
+    event_data = event.get("data", {}).get("object", {})
+
+    logger.info(f"Received Stripe webhook event: {event_type}")
+
+    try:
+        if event_type == "customer.subscription.updated":
+            await handle_subscription_updated(event_data, db)
+        elif event_type == "customer.subscription.deleted":
+            await handle_subscription_deleted(event_data, db)
+        elif event_type == "invoice.payment_succeeded":
+            try:
+                await handle_invoice_payment_succeeded(event_data, db)
+            except HTTPException:
+                raise  # ← let it pass through directly, don't wrap it
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invoice processing failed: {str(e)}"
+                )
+        elif event_type == "invoice.payment_failed":
+            await handle_invoice_payment_failed(event_data, db)
+        elif event_type == "invoice.payment_action_required":
+            await handle_invoice_payment_action_required(event_data, db)
+        elif event_type == "checkout.session.completed":
+            # This is already handled in /callback, but we can log it
+            logger.info("Checkout session completed via webhook")
+        else:
+            logger.info(f"Unhandled event type: {event_type}")
+
+        return JSONResponse(content={"status": "success", "event": event_type})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing webhook event {event_type}: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing webhook: {str(e)}"
         )
   
