@@ -26,7 +26,7 @@ AUTH_EXEMPT_EXACT = {"/health-check", "/docs", "/openapi.json", "/redoc", "/comp
 # Header names for API key (case-insensitive via .get which normalizes)
 APIKEY_HEADERS = ("x-api-key", "apikey")
 
-
+    
 def _is_exempt(path: str) -> bool:
     if path in AUTH_EXEMPT_EXACT:
         return True

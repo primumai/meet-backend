@@ -117,7 +117,7 @@ def _resolve_user_id_from_token_or_apikey(
                 detail="Invalid or expired token",
             )
 
-    # Fallback: apiKey + user_id in query params for this endpoint
+    # Fallback: apiKey + user_id from body or query params
     if api_key:
         company = db.query(Company).filter(Company.apikey == api_key.strip()).first()
         if not company:
@@ -125,11 +125,14 @@ def _resolve_user_id_from_token_or_apikey(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key. Access denied.",
             )
-        user_id = body_user_id # ✅ FROM BODY
+        
+        # Get user_id from body (for POST requests) or query params (for GET requests)
+        user_id = body_user_id or request.query_params.get("user_id")
+        
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="When using apiKey, user_id is required as query param (user_id=...).",
+                detail="When using apiKey, user_id is required in request body (POST) or query params (GET).",
             )
         user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
         if not user:
