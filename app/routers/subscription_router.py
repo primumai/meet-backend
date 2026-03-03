@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Header
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Header, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -26,6 +27,10 @@ from app.utils.jwt_utils import decode_access_token
 from app.config import settings
 import stripe
 import logging   
+
+# Security schemes for Swagger UI
+bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False, description="Use the API key for company authentication. Send user_id in the request body for POST APIs, and for GET APIs, send user_id in the query parameter like ?user_id=123absc.")
 
 router = APIRouter()
 
@@ -175,6 +180,8 @@ def get_subscriptions(request: Request, db: Session = Depends(get_db)):
 def get_user_subscriptions(
     request: Request,
     db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get subscriptions for the authenticated user with subscription details (name, price, duration).
@@ -236,6 +243,8 @@ def subscribe_package(
     payload: SubscribeRequest,
     request: Request,
     db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Create a Stripe Checkout session for a subscription purchase.
@@ -536,7 +545,8 @@ def subscribe_package(
 
 
 @router.get("/subscriptions/callback")
-def subscription_success(session_id: str, db: Session = Depends(get_db)):
+
+def subscription_success(session_id: str, db: Session = Depends(get_db), bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme), api_key: str = Security(api_key_scheme)):
 
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(
@@ -765,7 +775,9 @@ def subscription_success(session_id: str, db: Session = Depends(get_db)):
 async def manage_subscription_pack(
     subscription_id: str,
     return_url: str = "https://meet-nine-nu.vercel.app/dashboard",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Generate a Stripe Customer Portal session URL for managing a subscription.
@@ -809,7 +821,9 @@ async def manage_subscription_pack(
 def get_invoice(
     invoice_id: str,
     # current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Retrieve invoice details by invoice ID

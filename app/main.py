@@ -36,7 +36,22 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Meeting App API",
     description="Yellowcom can position the Video Meet subscription button within the same section where they currently display their pricing plans and other service subscriptions, ensuring consistent visibility and a seamless user experience.",
-    version="1.0.0"
+    version="1.0.0",
+    openapi_components={
+        "securitySchemes": {
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key"
+            },
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        }
+    },
+    security=[{"ApiKeyAuth": []}, {"BearerAuth": []}]
 )
 
 # Health check endpoint

@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.company_model import Company
 from app.schemas.company_schema import CreateCompanySchema, CompanyResponseSchema
 import secrets
 import string
+
+# Security schemes for Swagger UI
+bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False, description="Use the API key for company authentication. Send user_id in the request body for POST APIs, and for GET APIs, send user_id in the query parameter like ?user_id=123absc.")
 
 router = APIRouter()
 
@@ -22,7 +27,9 @@ def generate_apikey() -> str:
 @router.post("/create", response_model=CompanyResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_company(
     company_data: CreateCompanySchema,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Create a new company
@@ -81,7 +88,9 @@ def create_company(
 @router.get("/{company_id}", response_model=CompanyResponseSchema)
 def get_company_by_id(
     company_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get company details by company ID
@@ -113,7 +122,9 @@ def get_company_by_id(
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_company(
     company_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Delete a company by company ID

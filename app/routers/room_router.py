@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 from app.database import get_db
@@ -22,6 +23,10 @@ from app.services.videosdk_service import VideoSDKService
 from app.utils.email_utils import send_create_room_email
 from app.utils.auth_dependencies import get_current_user, require_active_subscription
 
+# Security schemes for Swagger UI
+bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False, description="Use the API key for company authentication. Send user_id in the request body for POST APIs, and for GET APIs, send user_id in the query parameter like ?user_id=123absc.")
+
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
@@ -31,12 +36,14 @@ logger = logging.getLogger(__name__)
 def create_room(
     room_data: CreateRoomSchema,
     current_user: User = Depends(require_active_subscription),
-    db: Session = Depends(get_db)
+    # get_current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Create a new room using VideoSDK API
     
-    - **apikey**: API key for company authentication (required)
     - **permissions**: Object containing room feature permissions
     - **maximum_participants**: Maximum number of participants (1-100)
     - **start_time**: Optional room start time
@@ -128,6 +135,8 @@ def end_meeting(
     room_id: str,
     body: EndMeetingSchema,
     db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     End a meeting by setting the room's end_time to now and update user's subscription usage.
@@ -234,7 +243,9 @@ def end_meeting(
 def get_meeting_token(
     room_id: str,
     token_data: GetTokenSchema,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get a meeting token for joining a room
@@ -280,7 +291,9 @@ def get_meeting_token(
 @router.get("/{room_id}", response_model=RoomWithUserResponseSchema)
 def get_room_by_id(
     room_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get room details by room ID including user details

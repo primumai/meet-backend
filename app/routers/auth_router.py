@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, status, Header, BackgroundTasks, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError, NoResultFound
@@ -21,6 +22,10 @@ from app.utils.password_utils import hash_password, verify_password
 from app.utils.email_utils import send_password_reset_email
 from app.utils.token_utils import generate_reset_token, get_token_expiration, is_token_expired
 from app.config import settings
+
+# Security schemes for Swagger UI
+bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False, description="Use the API key for company authentication. Send user_id in the request body for POST APIs, and for GET APIs, send user_id in the query parameter like ?user_id=123absc.")
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +302,9 @@ async def reset_password(
 @router.get("/profile", response_model=UserResponseSchema)
 async def get_profile(
     authorization: str | None = Header(None, alias="Authorization"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get current user profile from JWT token.

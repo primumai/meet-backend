@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from sqlalchemy.orm import Session
 from typing import List
 import logging
@@ -12,6 +13,10 @@ from app.schemas.auth_schema import UserResponseSchema
 from app.utils.password_utils import hash_password, verify_password
 from app.utils.jwt_utils import get_current_user
 
+# Security schemes for Swagger UI
+bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False, description="Use the API key for company authentication. Send user_id in the request body for POST APIs, and for GET APIs, send user_id in the query parameter like ?user_id=123absc.")
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -22,7 +27,9 @@ async def get_user_transactions(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)
+    # current_user: User = Depends(get_current_user),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get all transactions for a specific user
@@ -54,7 +61,9 @@ async def get_user_transactions(
 async def get_user_profile(
     user_id: str,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)
+    # current_user: User = Depends(get_current_user),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Get user profile by ID
@@ -84,7 +93,9 @@ async def update_user_profile(
     user_id: str,
     user_data: UserUpdateSchema,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user)
+    # current_user: User = Depends(get_current_user),
+    bearer_token: HTTPAuthorizationCredentials = Security(bearer_scheme),
+    api_key: str = Security(api_key_scheme)
 ):
     """
     Update user profile
